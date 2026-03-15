@@ -160,3 +160,6 @@ The model is designed to accommodate:
 - **Streaming**: the `/execute` endpoint can be upgraded to SSE for real-time item streaming
 - **Model config UI**: `temperature` and `model` are already stored per-prompt; expose them in the Composer
 - **Favourites / annotations**: add a `favoritedAt` or `comments` table linked to `items`
+
+## LLM Working Snapshot
+![LLM Working Snapshot](llm_working_snapshot.png)
