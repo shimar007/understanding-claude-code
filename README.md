@@ -162,4 +162,4 @@ The model is designed to accommodate:
 - **Favourites / annotations**: add a `favoritedAt` or `comments` table linked to `items`
 
 ## LLM Working Snapshot
-![LLM Working Snapshot](llm_working_snapshot.png)
+![LLM Working Snapshot](./llm-working-snapshot.png)
