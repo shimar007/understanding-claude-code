@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Item } from '@/db/schema';
 import type { PromptWithState } from './Studio';
 import { ItemCard } from './ItemCard';
@@ -27,7 +27,7 @@ export function CollectionView({
 }: CollectionViewProps) {
   const [showEditComposer, setShowEditComposer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
+  const [formattedTime, setFormattedTime] = useState('');
   const { prompt, activeCollection, activeItems } = entry;
   const isPending = isExecuting || entry.pendingCollection?.status === 'pending';
 
@@ -38,6 +38,12 @@ export function CollectionView({
       onExecute();
     }
   };
+
+  useEffect(() => {
+    if (activeCollection?.completedAt) {
+      setFormattedTime(new Date(activeCollection.completedAt).toLocaleTimeString());
+    }
+  }, [activeCollection?.completedAt]);
 
   const sortedItems = [...activeItems].sort((a, b) => a.position - b.position);
 
@@ -103,10 +109,10 @@ export function CollectionView({
                   value={`${activeCollection.inputTokens}↑ ${activeCollection.outputTokens}↓`}
                 />
               )}
-              {activeCollection.completedAt && (
+              {activeCollection.completedAt && formattedTime && (
                 <MetaChip
                   label="Generated"
-                  value={new Date(activeCollection.completedAt).toLocaleTimeString()}
+                  value={formattedTime}
                 />
               )}
               <div className="ml-auto">

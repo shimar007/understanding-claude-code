@@ -5,13 +5,15 @@ import { eq } from 'drizzle-orm';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     const [prompt] = await db
       .select()
       .from(prompts)
-      .where(eq(prompts.id, params.id));
+      .where(eq(prompts.id, id));
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt not found' }, { status: 404 });
@@ -26,9 +28,11 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     const body = await request.json();
     const { text, model, systemPrompt, temperature } = body;
 
@@ -44,7 +48,7 @@ export async function PATCH(
     const [updated] = await db
       .update(prompts)
       .set(updateData)
-      .where(eq(prompts.id, params.id))
+      .where(eq(prompts.id, id))
       .returning();
 
     if (!updated) {
@@ -60,10 +64,11 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await db.delete(prompts).where(eq(prompts.id, params.id));
+    const { id } = await params;
+    await db.delete(prompts).where(eq(prompts.id, id));
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error('DELETE /api/prompts/[id] error:', error);

@@ -29,14 +29,16 @@ import { generateCollection } from '@/lib/llm';
  */
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     // 1. Load the prompt
     const [prompt] = await db
       .select()
       .from(prompts)
-      .where(eq(prompts.id, params.id));
+      .where(eq(prompts.id, id));
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt not found' }, { status: 404 });
