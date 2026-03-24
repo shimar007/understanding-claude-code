@@ -1,46 +1,66 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import type { Prompt, Collection, Item } from '@/db/schema';
-import { PromptSidebar } from './PromptSidebar';
-import { CollectionView } from './CollectionView';
+import { useState, useCallback, useRef } from 'react';
+import type { Conversation } from '@/db/schema';
+import { type PromptWithState, type ConversationWithPrompts } from '@/app/page';
+import { ConversationSidebar } from './ConversationSidebar';
+import { ChatView } from './ChatView';
 import { PromptComposer } from './PromptComposer';
-
-export interface PromptWithState {
-  prompt: Prompt;
-  activeCollection: Collection | null;
-  pendingCollection: Collection | null;
-  activeItems: Item[];
-  totalVersions: number;
-}
+import { MultiInputComposer } from './MultiInputComposer';
 
 interface StudioProps {
-  initialData: PromptWithState[];
+  initialData: ConversationWithPrompts[];
 }
 
 export type ExecutionStatus = 'idle' | 'executing' | 'done' | 'error';
 
 export function Studio({ initialData }: StudioProps) {
-  const [prompts, setPrompts] = useState<PromptWithState[]>(initialData);
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(
-    initialData[0]?.prompt.id ?? null
+  const [conversations, setConversations] = useState<ConversationWithPrompts[]>(initialData);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
+    initialData[0]?.conversation.id ?? null
   );
-  const [executingId, setExecutingId] = useState<string | null>(null);
+  const [executingPromptId, setExecutingPromptId] = useState<string | null>(null);
   const [showComposer, setShowComposer] = useState(false);
+  const [showBatchComposer, setShowBatchComposer] = useState(false);
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
-  const selectedEntry = prompts.find((p) => p.prompt.id === selectedPromptId) ?? null;
+  const selectedConversation = conversations.find((c) => c.conversation.id === selectedConversationId) ?? null;
 
-  // Create a new prompt (optionally execute immediately)
+  // Create a new conversation
+  const handleCreateConversation = useCallback(async () => {
+    const res = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Conversation' }),
+    });
+    if (!res.ok) throw new Error('Failed to create conversation');
+    const newConversation: Conversation = await res.json();
+
+    const newEntry: ConversationWithPrompts = {
+      conversation: newConversation,
+      prompts: [],
+    };
+
+    setConversations((prev) => [newEntry, ...prev]);
+    setSelectedConversationId(newConversation.id);
+  }, []);
+
+  // Create a new prompt in the selected conversation
   const handleCreatePrompt = useCallback(async (text: string, execute: boolean) => {
+    if (!selectedConversationId) {
+      await handleCreateConversation();
+      return;
+    }
+
     const res = await fetch('/api/prompts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, conversationId: selectedConversationId }),
     });
     if (!res.ok) throw new Error('Failed to create prompt');
-    const newPrompt: Prompt = await res.json();
+    const newPrompt = await res.json();
 
-    const entry: PromptWithState = {
+    const promptWithState: PromptWithState = {
       prompt: newPrompt,
       activeCollection: null,
       pendingCollection: null,
@@ -48,37 +68,99 @@ export function Studio({ initialData }: StudioProps) {
       totalVersions: 0,
     };
 
-    setPrompts((prev) => [entry, ...prev]);
-    setSelectedPromptId(newPrompt.id);
+    setConversations((prev) => {
+      const updated = prev.map((conv) => {
+        if (conv.conversation.id === selectedConversationId) {
+          // If this is the first prompt and title is "New Conversation", update it
+          if (
+            conv.prompts.length === 0 &&
+            conv.conversation.title === 'New Conversation'
+          ) {
+            // Use first 50 chars of prompt text as title
+            const newTitle = text.length > 50 ? text.substring(0, 50) + '...' : text;
+            return {
+              ...conv,
+              prompts: [...conv.prompts, promptWithState],
+              conversation: { ...conv.conversation, title: newTitle },
+            };
+          }
+          return { ...conv, prompts: [...conv.prompts, promptWithState] };
+        }
+        return conv;
+      });
+
+      // Update the conversation title on the server if it was changed
+      const selectedConv = updated.find((c) => c.conversation.id === selectedConversationId);
+      if (
+        selectedConv &&
+        selectedConv.conversation.title !== 'New Conversation'
+      ) {
+        fetch('/api/conversations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: selectedConversationId,
+            title: selectedConv.conversation.title,
+          }),
+        }).catch((err) => console.error('Failed to update conversation title:', err));
+      }
+
+      return updated;
+    });
+
     setShowComposer(false);
 
     if (execute) {
       await handleExecute(newPrompt.id);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedConversationId, handleCreateConversation]);
+
+  // Cancel a running execution
+  const handleCancelExecute = useCallback((promptId: string) => {
+    const controller = abortControllersRef.current.get(promptId);
+    if (controller) {
+      controller.abort();
+      abortControllersRef.current.delete(promptId);
+    }
+    setExecutingPromptId(null);
+    // Revert optimistic state
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.map((p) =>
+          p.prompt.id === promptId ? { ...p, pendingCollection: null } : p
+        ),
+      }))
+    );
+  }, []);
 
   // Execute (or re-execute) a prompt
   const handleExecute = useCallback(async (promptId: string) => {
-    setExecutingId(promptId);
+    setExecutingPromptId(promptId);
+
+    // Create abort controller for this execution
+    const controller = new AbortController();
+    abortControllersRef.current.set(promptId, controller);
 
     // Optimistically mark as pending
-    setPrompts((prev) =>
-      prev.map((entry) =>
-        entry.prompt.id === promptId
-          ? {
-              ...entry,
-              pendingCollection: { id: 'pending', status: 'pending' } as Collection,
-              activeCollection: entry.activeCollection
-                ? { ...entry.activeCollection, status: 'archived' }
-                : null,
-            }
-          : entry
-      )
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.map((p) =>
+          p.prompt.id === promptId
+            ? {
+                ...p,
+                pendingCollection: { id: 'pending', status: 'pending' } as any,
+              }
+            : p
+        ),
+      }))
     );
 
     try {
       const res = await fetch(`/api/prompts/${promptId}/execute`, {
         method: 'POST',
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -88,31 +170,38 @@ export function Studio({ initialData }: StudioProps) {
 
       const { collection, items } = await res.json();
 
-      setPrompts((prev) =>
-        prev.map((entry) =>
-          entry.prompt.id === promptId
-            ? {
-                ...entry,
-                activeCollection: collection,
-                pendingCollection: null,
-                activeItems: items,
-              }
-            : entry
-        )
+      setConversations((prev) =>
+        prev.map((conv) => ({
+          ...conv,
+          prompts: conv.prompts.map((p) =>
+            p.prompt.id === promptId
+              ? {
+                  ...p,
+                  activeCollection: collection,
+                  pendingCollection: null,
+                  activeItems: items,
+                }
+              : p
+          ),
+        }))
       );
     } catch (err) {
       console.error('Execute error:', err);
-      // Revert optimistic state
-      setPrompts((prev) =>
-        prev.map((entry) =>
-          entry.prompt.id === promptId
-            ? { ...entry, pendingCollection: null }
-            : entry
-        )
-      );
-      alert(err instanceof Error ? err.message : 'Execution failed');
+      if (err instanceof Error && err.name !== 'AbortError') {
+        setConversations((prev) =>
+          prev.map((conv) => ({
+            ...conv,
+            prompts: conv.prompts.map((p) =>
+              p.prompt.id === promptId
+                ? { ...p, pendingCollection: null }
+                : p
+            ),
+          }))
+        );
+      }
     } finally {
-      setExecutingId(null);
+      abortControllersRef.current.delete(promptId);
+      setExecutingPromptId(null);
     }
   }, []);
 
@@ -124,101 +213,111 @@ export function Studio({ initialData }: StudioProps) {
       body: JSON.stringify({ text }),
     });
     if (!res.ok) throw new Error('Failed to update prompt');
-    const updated: Prompt = await res.json();
+    const updated = await res.json();
 
-    setPrompts((prev) =>
-      prev.map((entry) =>
-        entry.prompt.id === promptId
-          ? { ...entry, prompt: updated }
-          : entry
-      )
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.map((p) =>
+          p.prompt.id === promptId ? { ...p, prompt: updated } : p
+        ),
+      }))
     );
   }, []);
 
   // Delete a prompt
   const handleDeletePrompt = useCallback(async (promptId: string) => {
     await fetch(`/api/prompts/${promptId}`, { method: 'DELETE' });
-    setPrompts((prev) => prev.filter((e) => e.prompt.id !== promptId));
-    if (selectedPromptId === promptId) {
-      const remaining = prompts.filter((e) => e.prompt.id !== promptId);
-      setSelectedPromptId(remaining[0]?.prompt.id ?? null);
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.filter((p) => p.prompt.id !== promptId),
+      }))
+    );
+  }, []);
+
+  // Delete a conversation
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
+    await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+    setConversations((prev) => prev.filter((c) => c.conversation.id !== conversationId));
+    if (selectedConversationId === conversationId) {
+      const remaining = conversations.filter((c) => c.conversation.id !== conversationId);
+      setSelectedConversationId(remaining[0]?.conversation.id ?? null);
     }
-  }, [selectedPromptId, prompts]);
+  }, [selectedConversationId, conversations]);
 
   // Update an item
-  const handleUpdateItem = useCallback(async (
-    promptId: string,
-    itemId: string,
-    updates: Partial<Pick<Item, 'title' | 'body' | 'type' | 'tags'>>
-  ) => {
+  const handleUpdateItem = useCallback(async (promptId: string, itemId: string, updates: any) => {
     const res = await fetch(`/api/items/${itemId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
     if (!res.ok) throw new Error('Failed to update item');
-    const updated: Item = await res.json();
+    const updated = await res.json();
 
-    setPrompts((prev) =>
-      prev.map((entry) =>
-        entry.prompt.id === promptId
-          ? {
-              ...entry,
-              activeItems: entry.activeItems.map((item) =>
-                item.id === itemId ? updated : item
-              ),
-            }
-          : entry
-      )
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.map((p) =>
+          p.prompt.id === promptId
+            ? {
+                ...p,
+                activeItems: p.activeItems.map((item) =>
+                  item.id === itemId ? updated : item
+                ),
+              }
+            : p
+        ),
+      }))
     );
   }, []);
 
-  // Delete an item (soft delete)
+  // Delete an item
   const handleDeleteItem = useCallback(async (promptId: string, itemId: string) => {
     await fetch(`/api/items/${itemId}`, { method: 'DELETE' });
-    setPrompts((prev) =>
-      prev.map((entry) =>
-        entry.prompt.id === promptId
-          ? {
-              ...entry,
-              activeItems: entry.activeItems.filter((item) => item.id !== itemId),
-            }
-          : entry
-      )
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        prompts: conv.prompts.map((p) =>
+          p.prompt.id === promptId
+            ? {
+                ...p,
+                activeItems: p.activeItems.filter((item) => item.id !== itemId),
+              }
+            : p
+        ),
+      }))
     );
   }, []);
-
-  const isExecuting = (id: string) => executingId === id;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--paper)]">
       {/* Sidebar */}
-      <PromptSidebar
-        prompts={prompts}
-        selectedId={selectedPromptId}
-        executingId={executingId}
-        onSelect={setSelectedPromptId}
-        onNewPrompt={() => setShowComposer(true)}
-        onExecute={handleExecute}
-        onDelete={handleDeletePrompt}
+      <ConversationSidebar
+        conversations={conversations}
+        selectedId={selectedConversationId}
+        onSelect={setSelectedConversationId}
+        onNewConversation={handleCreateConversation}
+        onDelete={handleDeleteConversation}
       />
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {selectedEntry ? (
-          <CollectionView
-            entry={selectedEntry}
-            isExecuting={isExecuting(selectedEntry.prompt.id)}
-            onExecute={() => handleExecute(selectedEntry.prompt.id)}
-            onUpdatePrompt={(text) => handleUpdatePrompt(selectedEntry.prompt.id, text)}
-            onDeletePrompt={() => handleDeletePrompt(selectedEntry.prompt.id)}
-            onUpdateItem={(itemId, updates) =>
-              handleUpdateItem(selectedEntry.prompt.id, itemId, updates)
-            }
-            onDeleteItem={(itemId) => handleDeleteItem(selectedEntry.prompt.id, itemId)}
+        {selectedConversation ? (
+          <ChatView
+            conversation={selectedConversation}
+            executingPromptId={executingPromptId}
+            onCreatePrompt={() => setShowComposer(true)}
+            onExecute={handleExecute}
+            onCancelExecute={handleCancelExecute}
+            onUpdatePrompt={handleUpdatePrompt}
+            onDeletePrompt={handleDeletePrompt}
+            onUpdateItem={handleUpdateItem}
+            onDeleteItem={handleDeleteItem}
           />
         ) : (
-          <EmptyState onNewPrompt={() => setShowComposer(true)} />
+          <EmptyState onNewConversation={handleCreateConversation} />
         )}
       </main>
 
@@ -229,33 +328,42 @@ export function Studio({ initialData }: StudioProps) {
           onClose={() => setShowComposer(false)}
         />
       )}
+
+      {/* Batch prompt modal */}
+      {showBatchComposer && (
+        <MultiInputComposer
+          onSubmit={async (texts) => {
+            // TODO: Implement batch submission for conversations
+            setShowBatchComposer(false);
+          }}
+          onClose={() => setShowBatchComposer(false)}
+        />
+      )}
     </div>
   );
 }
 
-function EmptyState({ onNewPrompt }: { onNewPrompt: () => void }) {
+function EmptyState({ onNewConversation }: { onNewConversation: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-8 px-8">
       <div className="text-center max-w-md">
         <div className="font-display text-5xl font-bold text-[var(--ink)] mb-3 leading-tight">
-          Law Connect - LLM-powered content generation and management
+          Law Connect
         </div>
         <p className="font-mono text-sm text-[var(--ink-muted)] leading-relaxed">
-          Submit a prompt. Generate structured content. Refine and iterate.
+          Start a new conversation to begin generating legal content with AI.
         </p>
       </div>
       <button
-        onClick={onNewPrompt}
+        onClick={onNewConversation}
         className="flex items-center gap-2 px-5 py-3 bg-[var(--ink)] text-[var(--paper)] font-mono text-sm
                    hover:bg-[var(--amber)] hover:text-[var(--ink)] transition-colors duration-150"
       >
         <span className="text-[var(--amber)] group-hover:text-[var(--ink)]">+</span>
-        New Prompt
+        New Conversation
       </button>
-      <div className="font-mono text-xs text-[var(--ink-faint)] text-center leading-relaxed max-w-sm">
-        Your prompts and generated content will appear here.<br />
-        Each prompt maintains a full history of generations.
-      </div>
     </div>
   );
 }
+export { PromptWithState };
+

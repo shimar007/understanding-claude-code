@@ -27,10 +27,22 @@ import { text, integer, sqliteTable, index } from 'drizzle-orm/sqlite-core';
  *   - Future extensions: tags, comments, favorites, export
  */
 
+// ─── Conversations ───────────────────────────────────────────────────────────
+
+export const conversations = sqliteTable('conversations', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().default('New Conversation'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (table) => ({
+  createdAtIdx: index('conversations_created_at_idx').on(table.createdAt),
+}));
+
 // ─── Prompts ─────────────────────────────────────────────────────────────────
 
 export const prompts = sqliteTable('prompts', {
   id: text('id').primaryKey(),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
   text: text('text').notNull(),
   // Model configuration — stored so we can replay/audit executions
   model: text('model').notNull().default('claude-sonnet-4-20250514'),
@@ -38,7 +50,9 @@ export const prompts = sqliteTable('prompts', {
   temperature: integer('temperature').notNull().default(7), // stored as tenths: 7 = 0.7
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
-});
+}, (table) => ({
+  conversationIdIdx: index('prompts_conversation_id_idx').on(table.conversationId),
+}));
 
 // ─── Collections ─────────────────────────────────────────────────────────────
 
@@ -66,7 +80,7 @@ export const collections = sqliteTable('collections', {
 
 // ─── Items ────────────────────────────────────────────────────────────────────
 
-export const itemTypeValues = ['insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary'] as const;
+export const itemTypeValues = ['insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary', 'response', 'followup'] as const;
 export type ItemType = typeof itemTypeValues[number];
 
 export const items = sqliteTable('items', {
@@ -91,6 +105,8 @@ export const items = sqliteTable('items', {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type Conversation = typeof conversations.$inferSelect;
+export type NewConversation = typeof conversations.$inferInsert;
 export type Prompt = typeof prompts.$inferSelect;
 export type NewPrompt = typeof prompts.$inferInsert;
 export type Collection = typeof collections.$inferSelect;

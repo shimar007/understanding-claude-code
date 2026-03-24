@@ -5,28 +5,34 @@ import type { Item } from '@/db/schema';
 import type { PromptWithState } from './Studio';
 import { ItemCard } from './ItemCard';
 import { PromptComposer } from './PromptComposer';
+import { QueueProgress } from './QueueProgress';
 
 interface CollectionViewProps {
   entry: PromptWithState;
   isExecuting: boolean;
   onExecute: () => void;
+  onCancelExecute: () => void;
   onUpdatePrompt: (text: string) => Promise<void>;
   onDeletePrompt: () => void;
   onUpdateItem: (itemId: string, updates: Partial<Pick<Item, 'title' | 'body' | 'type' | 'tags'>>) => Promise<void>;
   onDeleteItem: (itemId: string) => void;
+  onCreateFollowupPrompt: (text: string, execute: boolean) => Promise<void>;
 }
 
 export function CollectionView({
   entry,
   isExecuting,
   onExecute,
+  onCancelExecute,
   onUpdatePrompt,
   onDeletePrompt,
   onUpdateItem,
   onDeleteItem,
+  onCreateFollowupPrompt,
 }: CollectionViewProps) {
   const [showEditComposer, setShowEditComposer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showFollowupComposer, setShowFollowupComposer] = useState(false);
   const [formattedTime, setFormattedTime] = useState('');
   const { prompt, activeCollection, activeItems } = entry;
   const isPending = isExecuting || entry.pendingCollection?.status === 'pending';
@@ -69,22 +75,37 @@ export function CollectionView({
               >
                 Edit
               </button>
-              <button
-                onClick={onExecute}
-                disabled={isPending}
-                className="px-3 py-1.5 font-mono text-xs bg-[var(--ink)] text-[var(--paper)]
-                           hover:bg-[var(--amber)] hover:text-[var(--ink)] transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                {isPending ? (
-                  <>
+              {isPending ? (
+                <>
+                  <button
+                    onClick={onExecute}
+                    disabled={true}
+                    className="px-3 py-1.5 font-mono text-xs bg-[var(--ink)] text-[var(--paper)]
+                               hover:bg-[var(--amber)] hover:text-[var(--ink)] transition-colors
+                               disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
                     <span className="inline-block w-2 h-2 border border-current border-t-transparent rounded-full animate-spin" />
                     Running
-                  </>
-                ) : (
-                  <>▶ Run</>
-                )}
-              </button>
+                  </button>
+                  <button
+                    onClick={onCancelExecute}
+                    className="px-3 py-1.5 font-mono text-xs border border-[var(--border)] text-[var(--ink-muted)]
+                               hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={onExecute}
+                  disabled={false}
+                  className="px-3 py-1.5 font-mono text-xs bg-[var(--ink)] text-[var(--paper)]
+                             hover:bg-[var(--amber)] hover:text-[var(--ink)] transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  ▶ Run
+                </button>
+              )}
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="px-3 py-1.5 font-mono text-xs border border-[var(--border)] text-[var(--ink-faint)]
@@ -127,28 +148,88 @@ export function CollectionView({
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {isPending ? (
-          <PendingState />
-        ) : activeCollection?.status === 'failed' ? (
-          <FailedState
-            message={activeCollection.errorMessage}
-            onRetry={onExecute}
-          />
-        ) : sortedItems.length > 0 ? (
-          <div className="stagger grid gap-4 grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
-            {sortedItems.map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                onUpdate={(updates) => onUpdateItem(item.id, updates)}
-                onDelete={() => onDeleteItem(item.id)}
-              />
-            ))}
+        <div className="flex flex-col gap-4 max-w-4xl mx-auto">
+          {/* User message */}
+          <div className="flex justify-end">
+            <div className="max-w-[80%] bg-[var(--ink)] text-[var(--paper)] px-4 py-3 rounded-2xl rounded-br-md">
+              <p className="font-mono text-sm leading-relaxed">{prompt.text}</p>
+            </div>
           </div>
-        ) : (
-          <NoContentState onExecute={onExecute} />
-        )}
+
+          {/* Status messages */}
+          {isPending ? (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] bg-[var(--cream)] border border-[var(--border)] rounded-2xl rounded-bl-md p-4">
+                <PendingState />
+              </div>
+            </div>
+          ) : activeCollection?.status === 'failed' ? (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] bg-[var(--cream)] border border-[var(--border)] rounded-2xl rounded-bl-md p-4">
+                <FailedState
+                  message={activeCollection.errorMessage}
+                  onRetry={onExecute}
+                />
+              </div>
+            </div>
+          ) : sortedItems.length > 0 ? (
+            <>
+              {sortedItems.map((item) => (
+                <div key={item.id} className="flex justify-start">
+                  <div className="max-w-[80%] bg-[var(--cream)] border border-[var(--border)] rounded-2xl rounded-bl-md overflow-hidden">
+                    <ItemCard
+                      item={item}
+                      onUpdate={(updates) => onUpdateItem(item.id, updates)}
+                      onDelete={() => onDeleteItem(item.id)}
+                      chatMode={true}
+                      onFollowup={(question) => onCreateFollowupPrompt(question, true)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] bg-[var(--cream)] border border-[var(--border)] rounded-2xl rounded-bl-md p-4">
+                <NoContentState onExecute={onExecute} />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Queue progress (for batch prompts) */}
+      {activeItems.length > 0 && activeCollection?.promptSnapshot?.includes('[Input') && (
+        <QueueProgress items={activeItems} isProcessing={isPending} />
+      )}
+
+      {/* Follow-up input */}
+      {activeCollection && activeCollection.status === 'completed' && (
+        <div className="shrink-0 border-t border-[var(--border)] bg-[var(--cream)] p-4">
+          <div className="max-w-4xl mx-auto">
+            {!showFollowupComposer ? (
+              <button
+                onClick={() => setShowFollowupComposer(true)}
+                className="w-full py-3 px-4 font-mono text-sm text-[var(--ink-muted)] border-2 border-dashed border-[var(--border)]
+                           hover:border-[var(--ink)] hover:text-[var(--ink)] transition-colors text-center"
+              >
+                Ask a follow-up question…
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <PromptComposer
+                  onSubmit={async (text, execute) => {
+                    await onCreateFollowupPrompt(text, execute);
+                    setShowFollowupComposer(false);
+                  }}
+                  onClose={() => setShowFollowupComposer(false)}
+                  initialText=""
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit prompt modal */}
       {showEditComposer && (

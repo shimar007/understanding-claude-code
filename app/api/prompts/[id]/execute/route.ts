@@ -58,17 +58,7 @@ export async function POST(
 
     // 3. Create a new pending collection
     const collectionId = generateId('col');
-    const [collection] = await db
-      .insert(collections)
-      .values({
-        id: collectionId,
-        promptId: prompt.id,
-        promptSnapshot: prompt.text,
-        status: 'pending',
-      })
-      .returning();
-
-    // 4. Execute the LLM call
+    
     let result;
     try {
       result = await generateCollection(prompt.text, {
@@ -94,45 +84,57 @@ export async function POST(
       );
     }
 
-    // 5. Persist items
-    const itemRecords = result.collection.items.map((item, index) => ({
-      id: generateId('itm'),
-      collectionId,
-      position: index,
-      type: item.type,
-      title: item.title,
-      body: item.body,
-      tags: item.tags.join(','),
-    }));
+    const response = await db.transaction(async (tx) => {
+      await tx.insert(collections)
+        .values({
+          id: collectionId,
+          promptId: prompt.id,
+          promptSnapshot: prompt.text,
+          status: 'pending',
+        })
+        .returning();
 
-    if (itemRecords.length > 0) {
-      await db.insert(items).values(itemRecords);
-    }
+      // 5. Persist items
+      const itemRecords = result.collection.items.map((item, index) => ({
+        id: generateId('itm'),
+        collectionId,
+        position: index,
+        type: item.type,
+        title: item.title,
+        body: item.body,
+        tags: item.tags.join(','),
+      }));
 
-    // 6. Mark collection as completed with metadata
-    const [completed] = await db
-      .update(collections)
-      .set({
-        status: 'completed',
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        durationMs: result.durationMs,
-        completedAt: new Date().toISOString(),
-      })
-      .where(eq(collections.id, collectionId))
-      .returning();
+      if (itemRecords.length > 0) {
+        await tx.insert(items).values(itemRecords);
+      }
 
-    // 7. Return the collection with its items
-    const collectionItems = await db
-      .select()
-      .from(items)
-      .where(eq(items.collectionId, collectionId));
+      // 6. Mark collection as completed with metadata
+      const [completed] = await tx
+        .update(collections)
+        .set({
+          status: 'completed',
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          durationMs: result.durationMs,
+          completedAt: new Date().toISOString(),
+        })
+        .where(eq(collections.id, collectionId))
+        .returning();
 
-    return NextResponse.json({
-      collection: completed,
-      items: collectionItems,
-    }, { status: 201 });
+      // 7. Return the collection with its items
+      const collectionItems = await tx
+        .select()
+        .from(items)
+        .where(eq(items.collectionId, collectionId));
 
+      return {
+        collection: completed,
+        items: collectionItems,
+      };
+    });
+
+    return NextResponse.json(response, { status: 201 });
   } catch (error) {
     console.error('POST /api/prompts/[id]/execute error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

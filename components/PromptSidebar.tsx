@@ -9,6 +9,7 @@ interface PromptSidebarProps {
   executingId: string | null;
   onSelect: (id: string) => void;
   onNewPrompt: () => void;
+  onNewBatchPrompt?: () => void;
   onExecute: (id: string) => void;
   onDelete: (id: string) => void;
 }
@@ -19,6 +20,7 @@ export function PromptSidebar({
   executingId,
   onSelect,
   onNewPrompt,
+  onNewBatchPrompt,
   onExecute,
   onDelete,
 }: PromptSidebarProps) {
@@ -31,18 +33,28 @@ export function PromptSidebar({
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 bg-[var(--amber)] rounded-full" />
           <span className="font-display font-bold text-base tracking-tight text-[var(--ink)]">
-            Law Connect - LLM-powered content generation and management
+            Law Connect
           </span>
         </div>
-        <button
-          onClick={onNewPrompt}
-          title="New prompt"
-          className="w-6 h-6 flex items-center justify-center text-[var(--ink-muted)]
-                     hover:text-[var(--ink)] hover:bg-[var(--border)] transition-colors duration-100
-                     font-mono text-lg leading-none"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onNewBatchPrompt}
+            title="New batch prompt (multiple inputs)"
+            className="w-6 h-6 flex items-center justify-center text-[var(--ink-muted)] text-xs font-mono
+                       hover:text-[var(--ink)] hover:bg-[var(--border)] transition-colors duration-100 leading-none"
+          >
+            ≡
+          </button>
+          <button
+            onClick={onNewPrompt}
+            title="New single prompt"
+            className="w-6 h-6 flex items-center justify-center text-[var(--ink-muted)]
+                       hover:text-[var(--ink)] hover:bg-[var(--border)] transition-colors duration-100
+                       font-mono text-lg leading-none"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {/* Prompts list */}

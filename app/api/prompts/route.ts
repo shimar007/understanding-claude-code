@@ -21,10 +21,14 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, model, systemPrompt, temperature } = body;
+    const { text, conversationId, model, systemPrompt, temperature } = body;
 
     if (!text?.trim()) {
       return NextResponse.json({ error: 'Prompt text is required' }, { status: 400 });
+    }
+
+    if (!conversationId?.trim()) {
+      return NextResponse.json({ error: 'Conversation ID is required' }, { status: 400 });
     }
 
     const id = generateId('pmt');
@@ -32,6 +36,7 @@ export async function POST(request: NextRequest) {
       .insert(prompts)
       .values({
         id,
+        conversationId,
         text: text.trim(),
         model: model || 'claude-sonnet-4-20250514',
         systemPrompt: systemPrompt || null,

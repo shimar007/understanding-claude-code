@@ -8,17 +8,10 @@ const anthropic = new Anthropic({
 /**
  * LLM OUTPUT STRUCTURE
  * --------------------
- * We ask the model to return a JSON object with a `title` (collection name)
- * and an array of `items`. Each item has a discriminated `type` field from a
- * controlled vocabulary, which drives UI rendering and future filtering.
+ * We ask the model to return a JSON object with a conversational `response`
+ * and an array of `followups` for potential next questions.
  *
- * Using JSON mode (structured output) rather than free-form text because:
- *   1. It makes persistence straightforward — no post-processing heuristics
- *   2. It enforces a contract the UI can depend on
- *   3. It allows heterogeneous item types in a single generation
- *
- * Trade-off: structured output is slightly less "creative" than free-form,
- * but for a content management workflow, predictability beats expressiveness.
+ * Using JSON mode for structured output to ensure consistency.
  */
 
 export interface GeneratedItem {
@@ -41,33 +34,26 @@ export interface GenerationResult {
   durationMs: number;
 }
 
-const SYSTEM_PROMPT = `You are a structured content generator. Given a user prompt, generate a collection of distinct, useful items.
+const SYSTEM_PROMPT = `You are a helpful, conversational AI assistant. Given a user prompt, provide a natural, engaging response in a chat-like format.
 
 Respond ONLY with a valid JSON object matching this exact schema:
 {
-  "title": "A concise title for the whole collection (5-8 words)",
-  "description": "A one-sentence summary of the collection",
+  "title": "A concise title for the response (5-8 words)",
+  "description": "A one-sentence summary of the response",
   "items": [
     {
-      "type": "insight" | "action" | "question" | "fact" | "idea" | "warning" | "summary",
-      "title": "Short, punchy item title (3-8 words)",
-      "body": "2-4 sentences of substantive content. Be specific and useful.",
-      "tags": ["tag1", "tag2"]
+      "type": "response",
+      "title": "Hey there!",
+      "body": "A conversational, friendly response to the user's prompt. Keep it natural and engaging, like chatting with a knowledgeable friend. Use contractions, casual language, and be personable.",
+      "tags": ["response"]
     }
   ]
 }
 
 Guidelines:
-- Generate 5-10 items per collection
-- Choose item types that best represent the nature of each piece of content
-- Use "insight" for observations and analysis
-- Use "action" for concrete next steps  
-- Use "question" for things worth exploring further
-- Use "fact" for verifiable statements
-- Use "idea" for creative suggestions
-- Use "warning" for risks or caveats
-- Use "summary" for high-level synthesis
-- Tags should be lowercase, single words or hyphenated phrases
+- Always include exactly one 'response' item
+- Make the response conversational and less formal - use "I think", "You could", "That sounds like", etc.
+- Be friendly and approachable
 - Do NOT wrap the JSON in markdown code blocks
 - Ensure the JSON is complete and valid`;
 

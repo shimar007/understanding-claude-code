@@ -49,17 +49,31 @@ const TYPE_CONFIG: Record<
     bg: 'bg-[#eef6f6]',
     border: 'border-[#b8d8d8]',
   },
+  response: {
+    label: 'Response',
+    color: 'text-[#1a5c3a]',
+    bg: 'bg-[#eef9f3]',
+    border: 'border-[#b8e0c8]',
+  },
+  followup: {
+    label: 'Follow-up',
+    color: 'text-[#5c1a3a]',
+    bg: 'bg-[#f9eef3]',
+    border: 'border-[#e0b8c8]',
+  },
 };
 
-const ITEM_TYPES: ItemType[] = ['insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary'];
+const ITEM_TYPES: ItemType[] = ['insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary', 'response', 'followup'];
 
 interface ItemCardProps {
   item: Item;
   onUpdate: (updates: Partial<Pick<Item, 'title' | 'body' | 'type' | 'tags'>>) => Promise<void>;
   onDelete: () => void;
+  chatMode?: boolean;
+  onFollowup?: (question: string) => void;
 }
 
-export function ItemCard({ item, onUpdate, onDelete }: ItemCardProps) {
+export function ItemCard({ item, onUpdate, onDelete, chatMode = false, onFollowup }: ItemCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -114,10 +128,10 @@ export function ItemCard({ item, onUpdate, onDelete }: ItemCardProps) {
   if (isEditing) {
     return (
       <div
-        className={`item-reveal border ${editConfig.border} bg-[var(--cream)] flex flex-col gap-0 overflow-hidden`}
+        className={`item-reveal border ${chatMode ? 'bg-transparent border-transparent' : `${editConfig.border} bg-[var(--cream)]`} flex flex-col gap-0 overflow-hidden`}
       >
         {/* Type selector */}
-        <div className={`px-4 pt-3 pb-2 ${editConfig.bg} border-b ${editConfig.border}`}>
+        <div className={`px-4 pt-3 pb-2 ${chatMode ? 'bg-transparent' : editConfig.bg} border-b ${editConfig.border}`}>
           <div className="flex flex-wrap gap-1">
             {ITEM_TYPES.map((t) => {
               const tc = TYPE_CONFIG[t];
@@ -205,11 +219,11 @@ export function ItemCard({ item, onUpdate, onDelete }: ItemCardProps) {
 
   return (
     <div
-      className={`item-reveal group border ${config.border} bg-[var(--cream)] flex flex-col
+      className={`item-reveal group ${chatMode ? 'bg-transparent border-transparent' : `border ${config.border} bg-[var(--cream)]`} flex flex-col
                   hover:shadow-md transition-shadow duration-200 overflow-hidden`}
     >
       {/* Type badge + actions */}
-      <div className={`flex items-center justify-between px-4 pt-3 pb-2 ${config.bg}`}>
+      <div className={`flex items-center justify-between px-4 pt-3 pb-2 ${chatMode ? 'bg-transparent' : config.bg}`}>
         <span className={`font-mono text-[10px] font-semibold uppercase tracking-widest ${config.color}`}>
           {config.label}
         </span>
@@ -262,6 +276,15 @@ export function ItemCard({ item, onUpdate, onDelete }: ItemCardProps) {
         <p className="font-mono text-xs text-[var(--ink-muted)] leading-relaxed">
           {item.body}
         </p>
+        {item.type === 'followup' && onFollowup && (
+          <button
+            onClick={() => onFollowup(item.body)}
+            className="mt-2 px-3 py-1 font-mono text-xs bg-[var(--amber)] text-[var(--ink)]
+                       hover:bg-[var(--ink)] hover:text-[var(--paper)] transition-colors"
+          >
+            Ask this question
+          </button>
+        )}
       </div>
 
       {/* Tags */}

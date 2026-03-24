@@ -5,10 +5,12 @@ import { useState, useEffect, useRef } from 'react';
 interface PromptComposerProps {
   onSubmit: (text: string, execute: boolean) => Promise<void>;
   onClose: () => void;
+  onAddToQueue?: (text: string) => Promise<void>;
   initialText?: string;
+  showQueueOption?: boolean;
 }
 
-export function PromptComposer({ onSubmit, onClose, initialText = '' }: PromptComposerProps) {
+export function PromptComposer({ onSubmit, onClose, onAddToQueue, initialText = '', showQueueOption = false }: PromptComposerProps) {
   const [text, setText] = useState(initialText);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

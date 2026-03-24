@@ -45,7 +45,7 @@ async function migrate() {
       id TEXT PRIMARY KEY,
       collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
       position INTEGER NOT NULL DEFAULT 0,
-      type TEXT NOT NULL DEFAULT 'insight' CHECK(type IN ('insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary')),
+      type TEXT NOT NULL DEFAULT 'insight' CHECK(type IN ('insight', 'action', 'question', 'fact', 'idea', 'warning', 'summary', 'response', 'followup')),
       title TEXT NOT NULL,
       body TEXT NOT NULL,
       tags TEXT,
