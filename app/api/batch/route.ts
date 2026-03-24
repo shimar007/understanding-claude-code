@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/client';
-import { prompts, collections, items } from '@/db/schema';
+import { conversations, prompts, collections, items } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { generateId } from '@/lib/id';
 import { generateCollection, GeneratedItem } from '@/lib/llm';
@@ -46,14 +46,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Create a new prompt to hold the batch
-    const promptId = generateId('prm');
+    // 1. Create a new conversation to hold the batch
+    const conversationId = generateId('conv');
+    const [conversation] = await db
+      .insert(conversations)
+      .values({
+        id: conversationId,
+        title: 'Batch Processing',
+      })
+      .returning();
+
+    // 2. Create a new prompt to hold the batch
+    const promptId = generateId('pmt');
     const batchPromptText = `Batch Processing:\n${validTexts.map((t, i) => `[Input ${i + 1}] ${t}`).join('\n\n')}`;
 
     const [newPrompt] = await db
       .insert(prompts)
       .values({
         id: promptId,
+        conversationId,
         text: batchPromptText,
         model: model ?? 'claude-sonnet-4-20250514',
         temperature: temperature ? Math.round(temperature * 10) : 7,
@@ -61,7 +72,7 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
-    // 2. Create a pending collection
+    // 3. Create a pending collection
     const collectionId = generateId('col');
     const [collection] = await db
       .insert(collections)
@@ -73,7 +84,7 @@ export async function POST(req: NextRequest) {
       })
       .returning();
 
-    // 3. Process each text sequentially and collect items
+    // 4. Process each text sequentially and collect items
     const allItems: GeneratedItem[] = [];
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
@@ -149,6 +160,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
+        conversation,
         prompt: newPrompt,
         collection: completedCollection,
         items: collectionItems,
