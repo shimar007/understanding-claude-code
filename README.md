@@ -163,3 +163,6 @@ The model is designed to accommodate:
 
 ## LLM Working Snapshot
 ![LLM Working Snapshot](./llm-working-snapshot.png)
+
+## LLM Conversation Snapshot
+![LLM Conversation Snapshot](./llm-conversation-snapshot.png)
