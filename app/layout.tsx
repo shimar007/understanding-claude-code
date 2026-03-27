@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Law Connect - LLM-powered content generation and management',
+  title: 'LLM-powered content generation and management',
   description: 'Iterative prompt-based content generation and management',
 };
 

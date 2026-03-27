@@ -33,7 +33,7 @@ export function PromptSidebar({
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 bg-[var(--amber)] rounded-full" />
           <span className="font-display font-bold text-base tracking-tight text-[var(--ink)]">
-            Law Connect
+            LLM
           </span>
         </div>
         <div className="flex items-center gap-1">

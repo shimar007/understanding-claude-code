@@ -348,7 +348,7 @@ function EmptyState({ onNewConversation }: { onNewConversation: () => void }) {
     <div className="flex-1 flex flex-col items-center justify-center gap-8 px-8">
       <div className="text-center max-w-md">
         <div className="font-display text-5xl font-bold text-[var(--ink)] mb-3 leading-tight">
-          Law Connect
+          LLM
         </div>
         <p className="font-mono text-sm text-[var(--ink-muted)] leading-relaxed">
           Start a new conversation to begin generating legal content with AI.
